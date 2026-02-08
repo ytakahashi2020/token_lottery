@@ -117,6 +117,7 @@ pub mod token_lottery {
         )?;
 
         // 3. マスターエディションを作成
+        {
         msg!("Creating Master edition accounts");
         let create_master_edition_v3_accounts = CreateMasterEditionV3 {
             payer: ctx.accounts.payer.to_account_info(),
@@ -139,9 +140,10 @@ pub mod token_lottery {
             create_master_edition_cpi_context,
             Some(0),  // max_supply: 最大供給量（0 = 追加ミント不可、None = 無制限）
         )?;
-
+        }
         // 4. クリエイターとして署名（コレクションを検証）
         msg!("Verifying collection");
+        
         let sign_metadata_accounts = SignMetadata {
             creator: ctx.accounts.collection_mint.to_account_info(),
             metadata: ctx.accounts.metadata.to_account_info(),
@@ -369,8 +371,26 @@ pub mod token_lottery {
         require!(metadata_name == ticket_name, ErrorCode::IncorrectTicket);
         require!(ctx.accounts.destination.amount > 0, ErrorCode::IncorrectTicket);
 
-        **ctx.accounts.token_lottery.to_account_info().try_borrow_mut_lamports()? -= ctx.accounts.token_lottery.lottery_pot_amount;
-        **ctx.accounts.payer.try_borrow_mut_lamports()? += ctx.accounts.token_lottery.lottery_pot_amount;
+        let signer_seeds: &[&[&[u8]]] = &[&[
+            b"token_lottery".as_ref(),
+            &[ctx.accounts.token_lottery.bump],
+        ]];
+
+        let transfer_accounts = Transfer {
+            from: ctx.accounts.token_lottery.to_account_info(),
+            to: ctx.accounts.payer.to_account_info(),
+        };
+
+        let transfer_cpi_context = CpiContext::new_with_signer(
+            ctx.accounts.system_program.to_account_info(),
+            transfer_accounts,
+            signer_seeds,
+        );
+
+        transfer(
+            transfer_cpi_context,
+            ctx.accounts.token_lottery.lottery_pot_amount,
+        )?;
 
         ctx.accounts.token_lottery.lottery_pot_amount = 0;
 
